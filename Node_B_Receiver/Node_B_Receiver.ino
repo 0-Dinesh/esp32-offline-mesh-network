@@ -1,41 +1,29 @@
 /*
 NODE: B
 TYPE: SERIAL
-SENSOR IMPLEMENTATION: YES (THROUGHT CODE)
-BLUETOOTH IMPLEMENTATION: YES
-ENCRYPTION: YES
+SENSOR IMPLEMENTATION: NO
+BLUETOOTH IMPLEMENTATION: NO
+ENCRYPTION: NO
 */
-
 
 #include <esp_now.h>
 #include <WiFi.h>
-#include "BluetoothSerial.h"
-
-// --- Bluetooth Setup ---
-BluetoothSerial SerialBT_B;
 
 // --- Node MAC Addresses ---
-uint8_t macA_B[] = {0x68, 0x25, 0xDD, 0x33, 0x2A, 0x08}; 
-uint8_t macB_B[] = {0x68, 0x25, 0xDD, 0x32, 0x5E, 0x24}; 
-uint8_t macC_B[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
-uint8_t macD_B[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+uint8_t macA[] = {0x68, 0x25, 0xDD, 0x33, 0x2A, 0x08}; 
+uint8_t macB[] = {0x68, 0x25, 0xDD, 0x32, 0x5E, 0x24}; 
+uint8_t macC[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
+uint8_t macD[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-esp_now_peer_info_t peerInfo_B;
-char targetNode_B = 'A';      
-uint8_t* targetMAC_B = macA_B;
+// Store peer info
+esp_now_peer_info_t peerInfo;
 
-// --- XOR Encryption Key ---
-const uint8_t XOR_KEY_B = 0xAA;
+// Active target node
+char targetNode = 'A'; // default send to A
+uint8_t* targetMAC = macA;
 
-// --- Encrypt/Decrypt function ---
-void encryptDecrypt_B(uint8_t *data, int len) {
-  for (int i = 0; i < len; i++) {
-    data[i] ^= XOR_KEY_B;
-  }
-}
-
-// --- Key → Message mapping ---
-String getMessageForKey_B(char key) {
+// Key → Message mapping
+String getMessageForKey(char key) {
   switch (key) {
     case '1': return "Hello";
     case '2': return "Meet me";
@@ -54,29 +42,26 @@ String getMessageForKey_B(char key) {
 }
 
 // --- ESP-NOW Callbacks ---
-void OnDataSent_B(const wifi_tx_info_t *info, esp_now_send_status_t status) {
-  Serial.print("Send Status: ");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "Fail");
+void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
+  Serial.print("Sent to ");
+  for (int i = 0; i < 6; i++) {
+    Serial.printf("%02X", info->des_addr[i]);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.print(" -> Status: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
 }
 
-void OnDataRecv_B(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
-  uint8_t buffer[250];
-  memcpy(buffer, incomingData, len);
-  encryptDecrypt_B(buffer, len); // decrypt
-  buffer[len] = '\0';
-
-  String msg = String((char*)buffer);
-  Serial.print("From Node: ");
-  for (int i=0; i<6; i++) {
-    Serial.printf("%02X", info->src_addr[i]);
-    if (i<5) Serial.print(":");
-  }
-  Serial.print(" → ");
-  Serial.println(msg);
-
-  // Forward alerts via Bluetooth
-  if (msg == "Alert") {
-    SerialBT_B.println("[ALERT] Emergency from another node!");
+void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+  char msg[250];
+  if (len < sizeof(msg)) {
+    memcpy(msg, incomingData, len);
+    msg[len] = '\0';
+    Serial.print("From Node ");
+    Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X -> ", 
+      info->src_addr[0], info->src_addr[1], info->src_addr[2],
+      info->src_addr[3], info->src_addr[4], info->src_addr[5]);
+    Serial.println(msg);
   }
 }
 
@@ -86,22 +71,19 @@ void setup() {
   WiFi.mode(WIFI_STA);
 
   if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW init failed!");
+    Serial.println("Error initializing ESP-NOW");
     return;
   }
 
-  esp_now_register_send_cb(OnDataSent_B);
-  esp_now_register_recv_cb(OnDataRecv_B);
+  esp_now_register_send_cb(OnDataSent);
+  esp_now_register_recv_cb(OnDataRecv);
 
-  memcpy(peerInfo_B.peer_addr, macA_B, 6);   // Default target: Node A
-  peerInfo_B.channel = 0;
-  peerInfo_B.encrypt = false;
-  esp_now_add_peer(&peerInfo_B);
-
-  if (!SerialBT_B.begin("ESP32_SerialNodeB")) {
-    Serial.println("BT init failed!");
-  } else {
-    Serial.println("Bluetooth ready. Pair with 'ESP32_SerialNodeB'");
+  // Add peer A by default
+  memcpy(peerInfo.peer_addr, macA, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add Node A as peer");
   }
 
   Serial.println("=== Node B Started ===");
@@ -112,70 +94,56 @@ void setup() {
 // --- Loop ---
 void loop() {
   if (Serial.available()) {
-    char key = Serial.read();
+    char key = toupper(Serial.read());
 
+    // Only accept valid keypad chars
     if (String("1234567890ABCD*#").indexOf(key) == -1) {
-      Serial.println("Invalid Key");
+      Serial.println("Invalid key. Use keypad keys only (1-9,0,A-D,*,#).");
       return;
     }
 
-    // Select target node
+    // If node selection key pressed
     if (key == 'A' || key == 'B' || key == 'C' || key == 'D') {
-      targetNode_B = key;
-      if (key == 'A') targetMAC_B = macA_B;
-      else if (key == 'B') targetMAC_B = macB_B;
-      else if (key == 'C') targetMAC_B = macC_B;
-      else if (key == 'D') targetMAC_B = macD_B;
+      targetNode = key;
+      if (key == 'A') targetMAC = macA;
+      else if (key == 'B') targetMAC = macB;
+      else if (key == 'C') targetMAC = macC;
+      else if (key == 'D') targetMAC = macD;
 
+      // Check if target is valid
       bool inactive = true;
       for (int i = 0; i < 6; i++) {
-        if (targetMAC_B[i] != 0x00) { inactive = false; break; }
+        if (targetMAC[i] != 0x00) { inactive = false; break; }
       }
       if (inactive) {
-        Serial.print("Node ");
-        Serial.print(key);
-        Serial.println(" not active!");
+        Serial.print("Node "); Serial.print(key); Serial.println(" not available!");
       } else {
-        Serial.print("Target: Node ");
-        Serial.println(key);
+        Serial.print("Target node set to "); Serial.println(key);
       }
       return;
     }
 
-    // Build message
-    String msg = getMessageForKey_B(key);
+    // Handle message keys
+    String msg = getMessageForKey(key);
     if (msg == "") return;
 
+    // Check if node is active
     bool inactive = true;
     for (int i = 0; i < 6; i++) {
-      if (targetMAC_B[i] != 0x00) { inactive = false; break; }
+      if (targetMAC[i] != 0x00) { inactive = false; break; }
     }
     if (inactive) {
-      Serial.print("Error: Node ");
-      Serial.print(targetNode_B);
-      Serial.println(" not active!");
+      Serial.print("Error: Node "); Serial.print(targetNode); Serial.println(" is not active!");
       return;
     }
 
-    // Encrypt before send
-    uint8_t buffer[250];
-    int len = msg.length();
-    memcpy(buffer, msg.c_str(), len);
-    encryptDecrypt_B(buffer, len);
-
-    esp_err_t result = esp_now_send(targetMAC_B, buffer, len);
+    // Send message
+    esp_err_t result = esp_now_send(targetMAC, (uint8_t*)msg.c_str(), msg.length());
     if (result == ESP_OK) {
-      Serial.print("Sent to Node ");
-      Serial.print(targetNode_B);
-      Serial.print(": ");
+      Serial.print("Sent to Node "); Serial.print(targetNode); Serial.print(": ");
       Serial.println(msg);
-
-      // Emergency via Bluetooth
-      if (msg == "Alert") {
-        SerialBT_B.println("[ALERT] Emergency triggered locally!");
-      }
     } else {
-      Serial.println("Send Error");
+      Serial.println("Error sending message!");
     }
   }
 }
