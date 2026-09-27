@@ -1,43 +1,46 @@
-# Offline Mesh Network using ESP-NOW
+# Offline Mesh Network using ESP-NOW (Experimental: Hybrid-Keyboard Phase)
 
-An offline, peer-to-peer IoT communication system utilizing ESP32 microcontrollers to facilitate secure, router-independent messaging. This project implements a custom hardware interface for inter-node communication, secured by a lightweight cryptographic cipher and extended by a Bluetooth (BLE) gateway for mobile monitoring.
+**⚠️ Branch Notice:** This branch contains an *Experimental Hybrid* developmental phase. In this iteration, the physical LCD and Buzzer are active, alongside XOR Encryption and the Bluetooth Gateway. However, the physical **Keypad is omitted**, reverting strictly to PC Keyboard (Serial) input. 
 
-## System Features
+---
 
-- **Decentralized Communication:** Utilizes the ESP-NOW protocol for low-latency, Wi-Fi router-independent data transmission between ESP32 nodes.
-- **Hardware Interface:** Integrates a 4x4 matrix keypad for user input, a 16x02 I2C LCD for message display, and a piezoelectric buzzer for auditory alerts.
-- **Data Security:** Implements a symmetric XOR encryption cipher (`0xAA`) at the payload level to obscure broadcasted messages from unauthorized interception.
-- **Mobile Gateway:** Features a Bluetooth Serial integration (`ESP32_AlertNode`) allowing paired smartphones to receive critical system alerts remotely.
+## Phase Objectives
 
-## Hardware Pin Mapping
+This branch was utilized as an isolation environment for debugging. When integrating multiple hardware peripherals alongside complex software (Cryptography + BLE), troubleshooting points of failure becomes difficult. The objectives of this hybrid phase were:
+1. Temporarily bypass the physical keypad matrix to isolate potential wiring or pin-conflict issues.
+2. Validate that the I2C LCD and Buzzer could successfully process encrypted incoming ESP-NOW packets while the Bluetooth radio was active.
+3. Test the XOR cryptographic payload delivery using highly controlled Serial inputs.
 
-The system relies on specific GPIO assignments to avoid hardware conflicts (specifically isolating GPIO 14 from the buzzer on Node B).
+---
 
-| Component | ESP32 GPIO (Node A & B) |
-| :--- | :--- |
-| **I2C LCD (SDA)** | GPIO 21 |
-| **I2C LCD (SCL)** | GPIO 22 |
-| **Keypad Rows (1-4)** | GPIO 19, 18, 32, 33 |
-| **Keypad Cols (1-4)** | GPIO 25, 26, 27, 14 |
-| **Buzzer** | GPIO 13 (Node B) |
+## Methodology & Architecture
 
-## Message Matrix
+### 1. Hybrid I/O Implementation
+To facilitate debugging, input and output methods were split between software and hardware paradigms.
+- **Input (Software):** The `Keypad.h` library is entirely removed. The transmitter node listens to the Arduino IDE Serial Monitor (`Serial.read()`) to capture user commands.
+- **Output (Hardware):** The receiver node utilizes the physical 16x02 I2C LCD (`0x27`) and the piezoelectric buzzer (GPIO `4`) to render decrypted payloads and sound alerts.
 
-The 4x4 matrix keypad is mapped to transmit predefined strings over the mesh network.
+### 2. Cryptography & BLE Re-Integration
+With the keypad removed, the software overhead was increased to its maximum intended capacity to test stability.
+- **Encryption:** The `encryptDecrypt()` function applies the `0xAA` XOR cipher to the buffer before passing it to the Wi-Fi antenna.
+- **Bluetooth:** The `BluetoothSerial` instance (`ESP32_AlertNode`) actively listens for connections. If a decrypted payload matches the string "Alert", a secondary emergency string is blasted over the BLE gateway to connected smartphones.
 
-| Key | Message Transmitted | Key | Message Transmitted |
-| :--- | :--- | :--- | :--- |
-| **1** | Hello | **8** | Break[cite: 16] |
-| **2** | Meet me[cite: 16] | **9** | Ok[cite: 16] |
-| **3** | File Ready[cite: 16] | **0** | Node Toggle[cite: 16] |
-| **4** | Wait[cite: 16] | **A-D** | Target Node Selection[cite: 16] |
-| **5** | System Down[cite: 16] | **\*** | Alert[cite: 16] |
-| **6** | Work Done[cite: 16] | **#** | Disconnect[cite: 16] |
+---
 
-## Getting Started
+## Testing & Execution Workflow
 
-1. Open `Node_A_Transmitter.ino` and `Node_B_Receiver.ino` in the Arduino IDE.
-2. Install required libraries: `Keypad`, `LiquidCrystal_I2C`, and `BluetoothSerial`.
-3. Flash the transmitter code to the primary ESP32 and the receiver code to the secondary ESP32.
-4. Supply 5V power to both nodes[cite: 16]. The LCD will display "Node Started" upon successful initialization.
-5. Use keys A-D to select the target MAC address, then press a numeric key to transmit the encrypted payload.
+### Setup Instructions
+1. Wire the receiver ESP32 to the LCD and Buzzer. **Do not connect the 4x4 keypad to the transmitter.**
+2. Flash the transmitter and receiver `.ino` files.
+3. Keep the transmitter ESP32 connected to the PC via USB and open the Serial Monitor (115200 baud).
+4. Pair a mobile device to the transmitter's Bluetooth broadcast (`ESP32_AlertNode`).
+
+### Operational Commands
+- Type characters (`1`-`9`, `A`-`D`, `*`, `#`) into the PC Serial Monitor.
+- Watch the physical LCD on the receiver update dynamically and listen for the 1kHz buzzer tone.
+- Type `*` into the Serial Monitor to trigger the XOR-encrypted alert, and verify the mobile phone receives the Bluetooth push notification.
+
+---
+
+## Known Limitations of this Phase
+- **Not a Standalone IoT Device:** Because the system requires a PC Serial connection to generate inputs, the transmitter node is tethered and not portable. This was strictly a diagnostic testing branch before merging the keypad back into the final `main` branch.
