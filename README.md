@@ -1,43 +1,72 @@
-# Offline Mesh Network using ESP-NOW
+# Offline Mesh Network using ESP-NOW (Legacy: Serial-Complete Phase)
 
-An offline, peer-to-peer IoT communication system utilizing ESP32 microcontrollers to facilitate secure, router-independent messaging. This project implements a custom hardware interface for inter-node communication, secured by a lightweight cryptographic cipher and extended by a Bluetooth (BLE) gateway for mobile monitoring.
+**⚠️ Branch Notice:** This branch contains the *Serial-Complete* developmental phase of the project. In this iteration, physical hardware components (LCDs, keypads, buzzers) had not yet been integrated. All inputs, outputs, and system monitoring are handled entirely through the Arduino IDE Serial Monitor.
 
-## System Features
+---
 
-- **Decentralized Communication:** Utilizes the ESP-NOW protocol for low-latency, Wi-Fi router-independent data transmission between ESP32 nodes.
-- **Hardware Interface:** Integrates a 4x4 matrix keypad for user input, a 16x02 I2C LCD for message display, and a piezoelectric buzzer for auditory alerts.
-- **Data Security:** Implements a symmetric XOR encryption cipher (`0xAA`) at the payload level to obscure broadcasted messages from unauthorized interception.
-- **Mobile Gateway:** Features a Bluetooth Serial integration (`ESP32_AlertNode`) allowing paired smartphones to receive critical system alerts remotely.
+## Phase Objectives
 
-## Hardware Pin Mapping
+Before introducing hardware constraints and potential physical wiring points of failure, this phase was strictly dedicated to validating the core software logic. The primary objectives of this iteration were:
+1. Establishing a stable, two-way ESP-NOW communication link between two hardcoded ESP32 MAC addresses.
+2. Implementing and validating a symmetrical XOR cryptographic cipher on the data payloads.
+3. Integrating the `BluetoothSerial` library to establish a secondary gateway for mobile alerts without crashing the primary Wi-Fi radio.
 
-The system relies on specific GPIO assignments to avoid hardware conflicts (specifically isolating GPIO 14 from the buzzer on Node B).
+---
 
-| Component | ESP32 GPIO (Node A & B) |
-| :--- | :--- |
-| **I2C LCD (SDA)** | GPIO 21 |
-| **I2C LCD (SCL)** | GPIO 22 |
-| **Keypad Rows (1-4)** | GPIO 19, 18, 32, 33 |
-| **Keypad Cols (1-4)** | GPIO 25, 26, 27, 14 |
-| **Buzzer** | GPIO 13 (Node B) |
+## Methodology & Protocol Architecture
 
-## Message Matrix
+### 1. Simulated Hardware Interface
+Because physical matrix keypads and I2C LCDs were omitted in this phase, the system uses the ESP32's built-in UART hardware serial port to simulate user interaction. 
+- **Input:** The user types specific characters (`1`-`9`, `A`-`D`, `*`, `#`) directly into the Arduino IDE Serial Monitor.
+- **Output:** Received messages, decrypted payloads, and system status logs are printed directly back to the Serial Monitor.
 
-The 4x4 matrix keypad is mapped to transmit predefined strings over the mesh network.
+### 2. ESP-NOW Communication Protocol
+The system utilizes the ESP-NOW protocol to achieve connectionless, router-independent mesh networking.
+- Both ESP32 modules are explicitly set to Wi-Fi Station Mode (`WIFI_STA`).
+- The native Wi-Fi connection is disconnected (`WiFi.disconnect()`) to ensure the 2.4 GHz radio is entirely dedicated to the ESP-NOW broadcast protocol.
+- Peer nodes are registered using the `esp_now_peer_info_t` structure. MAC addresses for target nodes are hardcoded into the firmware (e.g., `uint8_t macA[] = {0x68, 0x25, 0xDD, 0x33, 0x2A, 0x08}`) to simulate a closed, secure network topology.
 
-| Key | Message Transmitted | Key | Message Transmitted |
-| :--- | :--- | :--- | :--- |
-| **1** | Hello | **8** | Break[cite: 16] |
-| **2** | Meet me[cite: 16] | **9** | Ok[cite: 16] |
-| **3** | File Ready[cite: 16] | **0** | Node Toggle[cite: 16] |
-| **4** | Wait[cite: 16] | **A-D** | Target Node Selection[cite: 16] |
-| **5** | System Down[cite: 16] | **\*** | Alert[cite: 16] |
-| **6** | Work Done[cite: 16] | **#** | Disconnect[cite: 16] |
+### 3. Lightweight XOR Cryptography
+To prevent unauthorized packet sniffing on the 2.4 GHz spectrum, a custom encryption layer was introduced before passing data to the ESP-NOW transmission buffer.
+- **Encryption:** The sender iterates through the plain-text string, applying a bitwise XOR operation using a static hexadecimal key (`0xAA`) against every character byte.
+- **Decryption:** The receiving node intercepts the scrambled byte array and applies the exact same XOR operation (`msg[i] ^= XOR_KEY`) to seamlessly restore the original string for the Serial Monitor.
 
-## Getting Started
+### 4. Bluetooth (BLE) Gateway Integration
+To bridge the offline network with modern smart devices, the `BluetoothSerial` library was implemented.
+- The ESP32 broadcasts a classic Bluetooth signal (e.g., `ESP32_SerialNodeA`).
+- A paired smartphone can monitor the network.
+- If a specific emergency trigger is caught by the ESP-NOW receiver (such as the `*` key triggering an "Alert" payload), the receiver routes a secondary warning string over the Bluetooth Serial connection to the paired mobile device.
 
-1. Open `Node_A_Transmitter.ino` and `Node_B_Receiver.ino` in the Arduino IDE.
-2. Install required libraries: `Keypad`, `LiquidCrystal_I2C`, and `BluetoothSerial`.
-3. Flash the transmitter code to the primary ESP32 and the receiver code to the secondary ESP32.
-4. Supply 5V power to both nodes[cite: 16]. The LCD will display "Node Started" upon successful initialization.
-5. Use keys A-D to select the target MAC address, then press a numeric key to transmit the encrypted payload.
+---
+
+## Testing & Execution Workflow
+
+To run and test this specific legacy branch, you will need two ESP32 microcontrollers and two active USB connections.
+
+### Setup Instructions
+1. Flash `Node_A_Transmitter.ino` to the first ESP32.
+2. Flash `Node_B_Receiver.ino` to the second ESP32.
+3. Open two separate instances of the Arduino IDE (or use a secondary serial terminal like PuTTY) so you can view both Serial Monitors simultaneously.
+4. Set both Serial Monitors to **115200 baud**.
+
+### Operational Commands
+Enter the following characters into the Node A Serial Monitor to transmit encrypted payloads to Node B:
+
+* **Target Selection Keys:** `A`, `B`, `C`, `D` (Sets the destination MAC address).
+* **Standard Message Keys:** 
+  * `1` -> Hello
+  * `2` -> Meet me
+  * `3` -> File Ready
+  * `4` -> Wait
+  * `5` -> System Down
+  * `6` -> Work Done
+* **System Commands:**
+  * `*` -> Transmits an "Alert" payload (This will also trigger the Bluetooth gateway to send an emergency ping to a paired smartphone).
+  * `#` -> Disconnect
+
+---
+
+## Known Limitations of this Phase
+
+- **Radio Coexistence Interference:** Actively maintaining a paired Bluetooth connection on the receiving node occasionally caused the ESP-NOW protocol to drop incoming Wi-Fi frames due to the ESP32 sharing a single 2.4 GHz radio antenna for both protocols. This was resolved in later physical branches by restricting BLE gateway operations strictly to the transmitting node.
+- **Lack of Physical Portability:** The system relies entirely on a PC serial connection for input and output, defeating the purpose of an independent IoT node. This directly led to the integration of matrix keypads and LCDs in the `main` branch.
