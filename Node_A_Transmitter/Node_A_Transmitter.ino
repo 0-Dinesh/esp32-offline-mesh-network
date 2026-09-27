@@ -1,6 +1,6 @@
 /*
 NODE: A
-TYPE: PHYSICAL
+TYPE: PHYSICAL (NO KEYPAD INSTEAD KEYBOARD)
 SENSOR IMPLEMENTATION: YES (THROUGHT CODE)
 BLUETOOTH IMPLEMENTATION: YES
 ENCRYPTION: YES
@@ -11,7 +11,6 @@ ENCRYPTION: YES
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include "BluetoothSerial.h"
-#include <Keypad.h>
 
 // --- LCD + Buzzer Setup ---
 LiquidCrystal_I2C lcd(0x27, 16, 2); 
@@ -32,19 +31,6 @@ uint8_t* targetMAC = macB;
 
 // --- XOR Encryption Key ---
 const uint8_t XOR_KEY = 0xAA;
-
-// --- Keypad Setup ---
-const byte ROWS = 4; // Four rows
-const byte COLS = 4; // Four columns
-char keys[ROWS][COLS] = {
-  {'1','2','3','A'},
-  {'4','5','6','B'},
-  {'7','8','9','C'},
-  {'*','0','#','D'}
-};
-byte rowPins[ROWS] = {19, 18, 32, 33}; // Adjust to your wiring
-byte colPins[COLS] = {25, 26, 27, 14}; // Adjust to your wiring
-Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
 // --- Encrypt/Decrypt function ---
 void encryptDecrypt(uint8_t *data, int len) {
@@ -90,6 +76,7 @@ void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
 }
 
 void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+  // Decrypt the message
   uint8_t buffer[250];
   memcpy(buffer, incomingData, len);
   encryptDecrypt(buffer, len);
@@ -104,6 +91,7 @@ void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, in
   lcd.print(msg);
   beep();
 
+  // Forward alerts via Bluetooth
   if (msg == "Alert") {
     SerialBT.println("[ALERT] Emergency from another node!");
   }
@@ -130,11 +118,13 @@ void setup() {
   esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
 
+  // Add peer B (example, adjust per node)
   memcpy(peerInfo.peer_addr, macB, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
   esp_now_add_peer(&peerInfo);
 
+  // Bluetooth init
   if (!SerialBT.begin("ESP32_AlertNode")) {
     Serial.println("BT init failed!");
     lcd.clear();
@@ -147,14 +137,13 @@ void setup() {
 
   Serial.println("=== Node Started ===");
   Serial.println("Available Nodes: A, B, C, D");
+  Serial.println("Use keys [A-D] to select target, [1-9,0,*,#] to send messages.");
 }
 
 // --- Loop ---
 void loop() {
-  char key = keypad.getKey();
-  if (key) {
-    Serial.print("Key Pressed: ");
-    Serial.println(key);
+  if (Serial.available()) {
+    char key = Serial.read();
 
     if (String("1234567890ABCD*#").indexOf(key) == -1) {
       lcd.clear();
@@ -162,7 +151,7 @@ void loop() {
       return;
     }
 
-    // Handle node selection
+    // Select target node
     if (key == 'A' || key == 'B' || key == 'C' || key == 'D') {
       targetNode = key;
       if (key == 'A') targetMAC = macA;
@@ -187,7 +176,7 @@ void loop() {
       return;
     }
 
-    // Otherwise → send message
+    // Send encrypted message
     String msg = getMessageForKey(key);
     if (msg == "") return;
 
@@ -217,6 +206,7 @@ void loop() {
       lcd.print(msg);
       beep();
 
+      // Emergency via Bluetooth
       if (msg == "Alert") {
         SerialBT.println("[ALERT] Emergency triggered locally!");
       }
