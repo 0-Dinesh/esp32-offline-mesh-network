@@ -27,17 +27,17 @@ The 4x4 matrix keypad is mapped to transmit predefined strings over the mesh net
 
 | Key | Message Transmitted | Key | Message Transmitted |
 | :--- | :--- | :--- | :--- |
-| **1** | Hello | **8** | Break[cite: 16] |
-| **2** | Meet me[cite: 16] | **9** | Ok[cite: 16] |
-| **3** | File Ready[cite: 16] | **0** | Node Toggle[cite: 16] |
-| **4** | Wait[cite: 16] | **A-D** | Target Node Selection[cite: 16] |
-| **5** | System Down[cite: 16] | **\*** | Alert[cite: 16] |
-| **6** | Work Done[cite: 16] | **#** | Disconnect[cite: 16] |
+| **1** | Hello | **8** | Break |
+| **2** | Meet me | **9** | Ok |
+| **3** | File Ready | **0** | Node Toggle |
+| **4** | Wait | **A-D** | Target Node Selection |
+| **5** | System Down | **\*** | Alert |
+| **6** | Work Done | **#** | Disconnect |
 
 ## Getting Started
 
 1. Open `Node_A_Transmitter.ino` and `Node_B_Receiver.ino` in the Arduino IDE.
 2. Install required libraries: `Keypad`, `LiquidCrystal_I2C`, and `BluetoothSerial`.
 3. Flash the transmitter code to the primary ESP32 and the receiver code to the secondary ESP32.
-4. Supply 5V power to both nodes[cite: 16]. The LCD will display "Node Started" upon successful initialization.
+4. Supply 5V power to both nodes. The LCD will display "Node Started" upon successful initialization.
 5. Use keys A-D to select the target MAC address, then press a numeric key to transmit the encrypted payload.
