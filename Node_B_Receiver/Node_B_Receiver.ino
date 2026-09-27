@@ -1,6 +1,6 @@
 /*
 NODE: B
-TYPE: PHYSICAL
+TYPE: PHYSICAL (NO KEYPAD INSTEAD KEYBOARD)
 SENSOR IMPLEMENTATION: YES (THROUGHT CODE)
 BLUETOOTH IMPLEMENTATION: YES
 ENCRYPTION: YES
@@ -11,50 +11,36 @@ ENCRYPTION: YES
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include "BluetoothSerial.h"
-#include <Keypad.h>
 
 // --- LCD + Buzzer Setup ---
-LiquidCrystal_I2C lcd_B(0x27, 16, 2); 
-int buzzerPin_B = 4;
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
+int buzzerPin = 4;
 
 // --- Bluetooth Setup ---
-BluetoothSerial SerialBT_B;
+BluetoothSerial SerialBT;
 
 // --- Node MAC Addresses ---
-uint8_t macA_B[] = {0x68, 0x25, 0xDD, 0x33, 0x2A, 0x08}; 
-uint8_t macB_B[] = {0x68, 0x25, 0xDD, 0x32, 0x5E, 0x24}; 
-uint8_t macC_B[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
-uint8_t macD_B[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+uint8_t macA[] = {0x68, 0x25, 0xDD, 0x33, 0x2A, 0x08}; 
+uint8_t macB[] = {0x68, 0x25, 0xDD, 0x32, 0x5E, 0x24}; 
+uint8_t macC[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
+uint8_t macD[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-esp_now_peer_info_t peerInfo_B;
-char targetNode_B = 'A';      
-uint8_t* targetMAC_B = macA_B;
+esp_now_peer_info_t peerInfo;
+char targetNode = 'A';      
+uint8_t* targetMAC = macA;
 
 // --- XOR Encryption Key ---
-const uint8_t XOR_KEY_B = 0xAA;
-
-// --- Keypad Setup ---
-const byte ROWS_B = 4; 
-const byte COLS_B = 4; 
-char keys_B[ROWS_B][COLS_B] = {
-  {'1','2','3','A'},
-  {'4','5','6','B'},
-  {'7','8','9','C'},
-  {'*','0','#','D'}
-};
-byte rowPins_B[ROWS_B] = {19, 18, 32, 33}; 
-byte colPins_B[COLS_B] = {25, 26, 27, 14}; 
-Keypad keypad_B = Keypad(makeKeymap(keys_B), rowPins_B, colPins_B, ROWS_B, COLS_B);
+const uint8_t XOR_KEY = 0xAA;
 
 // --- Encrypt/Decrypt function ---
-void encryptDecrypt_B(uint8_t *data, int len) {
+void encryptDecrypt(uint8_t *data, int len) {
   for (int i = 0; i < len; i++) {
-    data[i] ^= XOR_KEY_B;
+    data[i] ^= XOR_KEY;
   }
 }
 
 // --- Key → Message mapping ---
-String getMessageForKey_B(char key) {
+String getMessageForKey(char key) {
   switch (key) {
     case '1': return "Hello";
     case '2': return "Meet me";
@@ -72,40 +58,42 @@ String getMessageForKey_B(char key) {
   }
 }
 
-// --- Buzzer beep ---
-void beep_B() {
-  ledcAttach(buzzerPin_B, 2000, 8);  
-  ledcWriteTone(buzzerPin_B, 1000);  
+// --- Buzzer beep (one-time) ---
+void beep() {
+  ledcAttach(buzzerPin, 2000, 8);  
+  ledcWriteTone(buzzerPin, 1000);  
   delay(150);
-  ledcWriteTone(buzzerPin_B, 0);     
+  ledcWriteTone(buzzerPin, 0);     
 }
 
 // --- ESP-NOW Callbacks ---
-void OnDataSent_B(const wifi_tx_info_t *info, esp_now_send_status_t status) {
-  lcd_B.clear();
-  lcd_B.setCursor(0,0);
-  lcd_B.print("Send Status:");
-  lcd_B.setCursor(0,1);
-  lcd_B.print(status == ESP_NOW_SEND_SUCCESS ? "OK" : "Fail");
+void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Send Status:");
+  lcd.setCursor(0,1);
+  lcd.print(status == ESP_NOW_SEND_SUCCESS ? "OK" : "Fail");
 }
 
-void OnDataRecv_B(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+  // Decrypt the message
   uint8_t buffer[250];
   memcpy(buffer, incomingData, len);
-  encryptDecrypt_B(buffer, len);
+  encryptDecrypt(buffer, len);
   buffer[len] = '\0';
 
   String msg = String((char*)buffer);
 
-  lcd_B.clear();
-  lcd_B.setCursor(0,0);
-  lcd_B.print("From Node");
-  lcd_B.setCursor(0,1);
-  lcd_B.print(msg);
-  beep_B();
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("From Node");
+  lcd.setCursor(0,1);
+  lcd.print(msg);
+  beep();
 
+  // Forward alerts via Bluetooth
   if (msg == "Alert") {
-    SerialBT_B.println("[ALERT] Emergency from another node!");
+    SerialBT.println("[ALERT] Emergency from another node!");
   }
 }
 
@@ -114,114 +102,116 @@ void setup() {
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
 
-  lcd_B.init();
-  lcd_B.backlight();
-  lcd_B.clear();
-  lcd_B.setCursor(0,0);
-  lcd_B.print("Node B Started");
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Node B Started");
   delay(1000);
 
   // ESP-NOW init
   if (esp_now_init() != ESP_OK) {
-    lcd_B.clear();
-    lcd_B.print("ESP-NOW Error");
+    lcd.clear();
+    lcd.print("ESP-NOW Error");
     return;
   }
-  esp_now_register_send_cb(OnDataSent_B);
-  esp_now_register_recv_cb(OnDataRecv_B);
+  esp_now_register_send_cb(OnDataSent);
+  esp_now_register_recv_cb(OnDataRecv);
 
-  memcpy(peerInfo_B.peer_addr, macA_B, 6);  // Default target is Node A
-  peerInfo_B.channel = 0;
-  peerInfo_B.encrypt = false;
-  esp_now_add_peer(&peerInfo_B);
+  // Add peer A (default target)
+  memcpy(peerInfo.peer_addr, macA, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+  esp_now_add_peer(&peerInfo);
 
-  if (!SerialBT_B.begin("ESP32_AlertNodeB")) {
+  // Bluetooth init
+  if (!SerialBT.begin("ESP32_AlertNodeB")) {
     Serial.println("BT init failed!");
-    lcd_B.clear();
-    lcd_B.print("BT Error");
+    lcd.clear();
+    lcd.print("BT Error");
   } else {
     Serial.println("Bluetooth ready. Pair with 'ESP32_AlertNodeB'");
-    lcd_B.setCursor(0,1);
-    lcd_B.print("BT: Ready");
+    lcd.setCursor(0,1);
+    lcd.print("BT: Ready");
   }
 
   Serial.println("=== Node B Started ===");
   Serial.println("Available Nodes: A, B, C, D");
+  Serial.println("Use keys [A-D] to select target, [1-9,0,*,#] to send messages.");
 }
 
 // --- Loop ---
 void loop() {
-  char key = keypad_B.getKey();
-  if (key) {
-    Serial.print("Key Pressed: ");
-    Serial.println(key);
+  if (Serial.available()) {
+    char key = Serial.read();
 
     if (String("1234567890ABCD*#").indexOf(key) == -1) {
-      lcd_B.clear();
-      lcd_B.print("Invalid Key");
+      lcd.clear();
+      lcd.print("Invalid Key");
       return;
     }
 
-    // Handle node selection
+    // Select target node
     if (key == 'A' || key == 'B' || key == 'C' || key == 'D') {
-      targetNode_B = key;
-      if (key == 'A') targetMAC_B = macA_B;
-      else if (key == 'B') targetMAC_B = macB_B;
-      else if (key == 'C') targetMAC_B = macC_B;
-      else if (key == 'D') targetMAC_B = macD_B;
+      targetNode = key;
+      if (key == 'A') targetMAC = macA;
+      else if (key == 'B') targetMAC = macB;
+      else if (key == 'C') targetMAC = macC;
+      else if (key == 'D') targetMAC = macD;
 
       bool inactive = true;
       for (int i = 0; i < 6; i++) {
-        if (targetMAC_B[i] != 0x00) { inactive = false; break; }
+        if (targetMAC[i] != 0x00) { inactive = false; break; }
       }
-      lcd_B.clear();
+      lcd.clear();
       if (inactive) {
-        lcd_B.print("Node ");
-        lcd_B.print(key);
-        lcd_B.setCursor(0,1);
-        lcd_B.print("not active!");
+        lcd.print("Node ");
+        lcd.print(key);
+        lcd.setCursor(0,1);
+        lcd.print("not active!");
       } else {
-        lcd_B.print("Target: Node ");
-        lcd_B.print(key);
+        lcd.print("Target: Node ");
+        lcd.print(key);
       }
       return;
     }
 
-    // Otherwise → send message
-    String msg = getMessageForKey_B(key);
+    // Send encrypted message
+    String msg = getMessageForKey(key);
     if (msg == "") return;
 
     bool inactive = true;
     for (int i = 0; i < 6; i++) {
-      if (targetMAC_B[i] != 0x00) { inactive = false; break; }
+      if (targetMAC[i] != 0x00) { inactive = false; break; }
     }
-    lcd_B.clear();
+    lcd.clear();
     if (inactive) {
-      lcd_B.print("Error: Node ");
-      lcd_B.print(targetNode_B);
-      lcd_B.setCursor(0,1);
-      lcd_B.print("not active!");
+      lcd.print("Error: Node ");
+      lcd.print(targetNode);
+      lcd.setCursor(0,1);
+      lcd.print("not active!");
       return;
     }
 
     uint8_t buffer[250];
     int len = msg.length();
     memcpy(buffer, msg.c_str(), len);
-    encryptDecrypt_B(buffer, len);
+    encryptDecrypt(buffer, len);
 
-    esp_err_t result = esp_now_send(targetMAC_B, buffer, len);
+    esp_err_t result = esp_now_send(targetMAC, buffer, len);
     if (result == ESP_OK) {
-      lcd_B.print("Sent to Node ");
-      lcd_B.print(targetNode_B);
-      lcd_B.setCursor(0,1);
-      lcd_B.print(msg);
-      beep_B();
+      lcd.print("Sent to Node ");
+      lcd.print(targetNode);
+      lcd.setCursor(0,1);
+      lcd.print(msg);
+      beep();
 
+      // Emergency via Bluetooth
       if (msg == "Alert") {
-        SerialBT_B.println("[ALERT] Emergency triggered locally!");
+        SerialBT.println("[ALERT] Emergency triggered locally!");
       }
     } else {
-      lcd_B.print("Send Error");
+      lcd.print("Send Error");
     }
   }
 }
